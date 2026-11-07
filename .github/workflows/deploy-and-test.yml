@@ -37,15 +37,24 @@ jobs:
           docker compose up -d --build
           docker compose ps
 
-      - name: Verify containers are running
+      - name: Deploy with Docker Compose
         run: |
-          if docker compose ps | grep -Eq "Up|running"; then
-            echo "All containers are running"
-          else
-            echo "Some containers failed to start"
-            docker compose logs
-            exit 1
-          fi
+          echo "=== Очистка старых контейнеров и томов ==="
+          docker compose down -v || true
+          
+          echo "=== Проверка файла .env перед запуском ==="
+          sed 's/DB_PASSWORD=.*/DB_PASSWORD=***HIDDEN***/' .env
+          
+          echo "=== Проверка того, как Docker Compose видит переменные ==="
+          docker compose config
+          
+          echo "=== Запуск контейнеров ==="
+          docker compose up -d --build
+          
+          echo "=== Ожидание запуска ==="
+          sleep 20
+          docker compose ps
+          docker compose logs
 
       - name: Run application tests
         run: |
