@@ -16,34 +16,39 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Create .env file from secrets
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          APP_PORT: ${{ secrets.APP_PORT }}
+          APP_SECRET: ${{ secrets.APP_SECRET }}
+          API_KEY: ${{ secrets.API_KEY }}
         run: |
+          echo "=== Создание .env ==="
           {
-            echo "DB_HOST=${{ secrets.DB_HOST }}"
-            echo "DB_PORT=${{ secrets.DB_PORT }}"
-            echo "DB_NAME=${{ secrets.DB_NAME }}"
-            echo "DB_USER=${{ secrets.DB_USER }}"
-            echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}"
-            echo "APP_PORT=${{ secrets.APP_PORT }}"
-            echo "APP_SECRET=${{ secrets.APP_SECRET }}"
-            echo "API_KEY=${{ secrets.API_KEY }}"
-            echo "COMPOSE_PROJECT_NAME=${{ env.COMPOSE_PROJECT_NAME }}"
+            echo "DB_HOST=${DB_HOST}"
+            echo "DB_PORT=${DB_PORT}"
+            echo "DB_NAME=${DB_NAME}"
+            echo "DB_USER=${DB_USER}"
+            echo "DB_PASSWORD=${DB_PASSWORD}"
+            echo "APP_PORT=${APP_PORT}"
+            echo "APP_SECRET=${APP_SECRET}"
+            echo "API_KEY=${API_KEY}"
+            echo "COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}"
           } > .env
-          echo ".env created"
-          sed 's/=.*/=***/' .env
-
-      - name: Deploy with Docker Compose
-        run: |
-          docker compose down -v || true
-          docker compose up -d --build
-          docker compose ps
+          
+          # Удаляем невидимые символы Windows (CR), чтобы Postgres не падал
+          sed -i 's/\r$//' .env
+          
+          echo "=== Проверка .env (пароль скрыт) ==="
+          sed 's/DB_PASSWORD=.*/DB_PASSWORD=***HIDDEN***/' .env
 
       - name: Deploy with Docker Compose
         run: |
           echo "=== Очистка старых контейнеров и томов ==="
           docker compose down -v || true
-          
-          echo "=== Проверка файла .env перед запуском ==="
-          sed 's/DB_PASSWORD=.*/DB_PASSWORD=***HIDDEN***/' .env
           
           echo "=== Проверка того, как Docker Compose видит переменные ==="
           docker compose config
@@ -51,10 +56,24 @@ jobs:
           echo "=== Запуск контейнеров ==="
           docker compose up -d --build
           
-          echo "=== Ожидание запуска ==="
+          echo "=== Ожидание запуска (20 сек) ==="
           sleep 20
+          
+          echo "=== Статус контейнеров ==="
           docker compose ps
-          docker compose logs
+          
+          echo "=== Логи базы данных (последние 50 строк) ==="
+          docker compose logs --tail=50 db
+
+      - name: Verify containers are running
+        run: |
+          if docker compose ps | grep -Eq "Up|running"; then
+            echo "All containers are running"
+          else
+            echo "Some containers failed to start"
+            docker compose logs
+            exit 1
+          fi
 
       - name: Run application tests
         run: |
@@ -95,16 +114,8 @@ jobs:
           # Deployment Test Report
 
           - Date: $(date)
-          - Application health: checked
-          - Database connectivity: checked
           - DB_COUNT: ${DB_COUNT:-unknown}
           - WEB_COUNT: ${WEB_COUNT:-unknown}
-          - Containers: checked with docker compose ps
-
-          ## Environment
-          - DB_HOST: ${{ secrets.DB_HOST }}
-          - DB_NAME: ${{ secrets.DB_NAME }}
-          - APP_PORT: ${{ secrets.APP_PORT }}
           EOF
 
       - name: Save Docker logs
